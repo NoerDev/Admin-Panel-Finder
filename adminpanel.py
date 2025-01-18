@@ -1,160 +1,265 @@
-import asyncio
 import aiohttp
+import asyncio
 from bs4 import BeautifulSoup
 import sys
 import os
 from urllib.parse import urlparse
 import time
 import random
-from tqdm import tqdm  # Burada tqdm'yi normal olarak kullanıyoruz, asyncio ile uyumlu
-import pyfiglet
-from termcolor import colored
 
-# Admin panel yollarını bir dosyadan okuma
-def load_paths_from_file(file_name="adminpanel.txt"):
-    if not os.path.exists(file_name):
-        print(f"\033[91m[ERROR] '{file_name}' dosyası bulunamadı. Lütfen admin panel yollarını içeren bir dosya sağlamak için 'adminpanel.txt' dosyasını oluşturun.\033[0m")
+# Admin panel yollarını dosyadan okuma fonksiyonu
+
+def load_admin_paths():
+
+    try:
+
+        with open('admin.txt', 'r', encoding='utf-8') as file:
+
+            paths = [line.strip() for line in file if line.strip()]
+
+        return paths
+
+    except FileNotFoundError:
+
+        print(f"{Colors.FAIL}[HATA]{Colors.ENDC} admin.txt dosyası bulunamadı!")
+
         sys.exit(1)
 
-    with open(file_name, "r") as file:
-        # Dosyadaki her bir yolu satır satır oku ve listeye ekle
-        paths = [line.strip() for line in file.readlines() if line.strip()]
-    
-    return paths
+
+
+# common_paths listesini kaldırıp, dosyadan okuma yapacağız
+
+common_paths = load_admin_paths()
+
+
+# Kullanıcı Arayüzü renkleri için sabitler
+class Colors:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    GREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    CYAN = '\033[96m'
+    MAGENTA = '\033[35m'
+    RED = '\033[31m'
+    YELLOW = '\033[33m'
+    WHITE = '\033[37m'
+    BG_BLACK = '\033[40m'
+    BG_RED = '\033[41m'
+    BG_GREEN = '\033[42m'
+    BG_BLUE = '\033[44m'
+    UNDERLINE = '\033[4m'
+
+def print_banner():
+    banner = f"""
+{Colors.CYAN}
+    ███╗   ██╗███████╗██╗  ██╗██╗   ██╗ ██████╗ ██████╗ ████████╗███████╗██╗  ██╗
+    ████╗  ██║██╔════╝╚██╗██╔╝██║   ██║██╔═══██╗██╔══██╗╚══██╔══╝██╔════╝╚██╗██╔╝
+    ██╔██╗ ██║█████╗   ╚███╔╝ ██║   ██║██║   ██║██████╔╝   ██║   █████╗   ╚███╔╝ 
+    ██║╚██╗██║██╔══╝   ██╔██╗ ╚██╗ ██╔╝██║   ██║██╔══██╗   ██║   ██╔══╝   ██╔██╗ 
+    ██║ ╚████║███████╗██╔╝ ██╗ ╚████╔╝ ╚██████╔╝██║  ██║   ██║   ███████╗██╔╝ ██╗
+    ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝  ╚═══╝   ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═╝  ╚═╝
+{Colors.GREEN}╔══════════════════════════════════════════════════════════════════════════╗
+║ {Colors.YELLOW}Version: 3.0                                     Developed by: noerdev{Colors.GREEN}     ║
+╚══════════════════════════════════════════════════════════════════════════╝{Colors.ENDC}
+"""
+    print(banner)
+
+# İlerleme çubuğu sınıfı güncellendi
+class ProgressBar:
+    def __init__(self, total):
+        self.total = total
+        self.current = 0
+        self.bar_width = 40
+        self.start_time = time.time()
+        
+    def update(self):
+        self.current += 1
+        percentage = (self.current / self.total) * 100
+        filled_length = int(self.bar_width * self.current / self.total)
+        bar = f"{Colors.GREEN}█{Colors.ENDC}" * filled_length + f"{Colors.WHITE}-{Colors.ENDC}" * (self.bar_width - filled_length)
+        
+        elapsed_time = time.time() - self.start_time
+        speed = self.current / elapsed_time if elapsed_time > 0 else 0
+        
+        print(f'\r{Colors.BLUE}[{Colors.ENDC} {bar} {Colors.BLUE}]{Colors.ENDC} {Colors.YELLOW}{percentage:6.2f}%{Colors.ENDC} ' + 
+              f'{Colors.CYAN}({self.current}/{self.total}){Colors.ENDC} ' +
+              f'{Colors.MAGENTA}[{speed:.2f} req/s]{Colors.ENDC}', end='')
+
+# Sonuç özeti sınıfı eklendi
+class ScanSummary:
+    def __init__(self):
+        self.start_time = time.time()
+        self.found_panels = []
+        self.errors = []
+        
+    def add_panel(self, panel):
+        self.found_panels.append(panel)
+        
+    def add_error(self, error):
+        self.errors.append(error)
+        
+    def print_summary(self):
+        duration = time.time() - self.start_time
+        print(f"\n\n{Colors.BOLD}{Colors.BG_BLUE} TARAMA SONUÇLARI {Colors.ENDC}")
+        print(f"\n{Colors.CYAN}├─{Colors.ENDC} Toplam Süre: {Colors.GREEN}{duration:.2f} saniye{Colors.ENDC}")
+        print(f"{Colors.CYAN}├─{Colors.ENDC} Taranan URL Sayısı: {Colors.GREEN}{len(common_paths)}{Colors.ENDC}")
+        print(f"{Colors.CYAN}├─{Colors.ENDC} Bulunan Panel Sayısı: {Colors.GREEN}{len(self.found_panels)}{Colors.ENDC}")
+        print(f"{Colors.CYAN}└─{Colors.ENDC} Hata Sayısı: {Colors.RED}{len(self.errors)}{Colors.ENDC}")
+        
+        if self.found_panels:
+            print(f"\n{Colors.BOLD}{Colors.BG_GREEN} BULUNAN PANELLER {Colors.ENDC}")
+            for i, panel in enumerate(self.found_panels, 1):
+                print(f"\n{Colors.CYAN}[{i}]{Colors.ENDC} {Colors.GREEN}{panel['url']}{Colors.ENDC}")
+                print(f"   {Colors.YELLOW}├─{Colors.ENDC} Yanıt Süresi: {panel['response_time']}ms")
+                print(f"   {Colors.YELLOW}├─{Colors.ENDC} Durum Kodu: {panel['status_code']}")
+                print(f"   {Colors.YELLOW}└─{Colors.ENDC} Başlık: {panel['title']}")
 
 # Asenkron admin paneli arama fonksiyonu
-async def find_admin_panel(session, url, path):
+async def find_admin_panel(session, url, path, progress_bar):
     admin_url = f"{url}/{path}"
     try:
-        start_time = time.time()  # Zaman ölçümünü başlat
-        async with session.get(admin_url, timeout=10) as response:
-            end_time = time.time()  # Zaman ölçümünü sonlandır
-            response_time = round((end_time - start_time) * 1000, 2)  # Yanıt süresi (ms)
+        start_time = time.time()
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Connection': 'keep-alive',
+        }
+        
+        async with session.get(admin_url, timeout=10, headers=headers, ssl=False) as response:
+            end_time = time.time()
+            response_time = round((end_time - start_time) * 1000, 2)
             
-            # Terminalde her bir URL'yi ve süresini yazdır
             if response.status == 200:
                 page_content = await response.text()
                 soup = BeautifulSoup(page_content, "html.parser")
                 
-                # Başlık dışında başka kriterlere de bakabiliriz (örneğin admin paneline dair metin araması)
-                if soup.title and "admin" in soup.title.string.lower():
-                    print(f"\033[92m[OK] {admin_url} (Yanıt süresi: {response_time}ms)\033[0m")
-                    return admin_url
-                elif "admin" in page_content.lower():  # Sayfa içeriğinde admin kelimesi var mı kontrolü
-                    print(f"\033[92m[OK] {admin_url} (Yanıt süresi: {response_time}ms)\033[0m")
-                    return admin_url
-            print(f"\033[91m[FAIL] {admin_url} (Yanıt süresi: {response_time}ms)\033[0m")
-    except asyncio.TimeoutError:
-        print(f"\033[91m[ERROR] Zaman aşımı: {admin_url}\033[0m")
+                # Geliştirilmiş kontrol mekanizması
+                admin_indicators = [
+                    "admin", "login", "dashboard", "yönetim", "panel",
+                    "giriş", "kontrol paneli", "yönetici"
+                ]
+                
+                title_match = soup.title and any(indicator in soup.title.string.lower() for indicator in admin_indicators)
+                content_match = any(indicator in page_content.lower() for indicator in admin_indicators)
+                form_exists = bool(soup.find('form'))
+                
+                if title_match or (content_match and form_exists):
+                    print(f"\n{Colors.GREEN}[BULUNDU]{Colors.ENDC} {admin_url} (Yanıt: {response_time}ms)")
+                    return {
+                        'url': admin_url,
+                        'response_time': response_time,
+                        'status_code': response.status,
+                        'title': soup.title.string if soup.title else 'Başlık Bulunamadı'
+                    }
+            
+            progress_bar.update()
+            
     except Exception as e:
-        print(f"\033[91m[ERROR] Hata oluştu: {e}\033[0m")
+        print(f"\n{Colors.FAIL}[HATA]{Colors.ENDC} {admin_url}: {str(e)}")
+    
     return None
 
 # Ana tarama fonksiyonu
-async def scan_admin_panels(url, paths):
+async def scan_admin_panels(url):
+    print(f"\n{Colors.BLUE}[BİLGİ]{Colors.ENDC} Tarama başlatılıyor: {Colors.UNDERLINE}{url}{Colors.ENDC}\n")
+    
+    summary = ScanSummary()
+    progress_bar = ProgressBar(len(common_paths))
     tasks = []
-    async with aiohttp.ClientSession() as session:
-        for path in paths:
-            task = asyncio.ensure_future(find_admin_panel(session, url, path))
+    
+    connector = aiohttp.TCPConnector(limit=50)
+    timeout = aiohttp.ClientTimeout(total=30)
+    
+    async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+        for path in common_paths:
+            task = asyncio.ensure_future(find_admin_panel(session, url, path, progress_bar))
             tasks.append(task)
-
-        # Sonuçları bekliyoruz
-        admin_panels = await asyncio.gather(*tasks)
-
-    return [panel for panel in admin_panels if panel]
+        
+        results = await asyncio.gather(*tasks)
+        
+        for result in results:
+            if result:
+                summary.add_panel(result)
+    
+    summary.print_summary()
+    return summary.found_panels
 
 # URL doğrulama
 def validate_url(url):
     parsed_url = urlparse(url)
     if not parsed_url.scheme:
-        print("\033[91m[ERROR] Geçerli bir URL girin (örn. https://example.com).\033[0m")
+        print(f"\n{Colors.BG_RED}[HATA]{Colors.ENDC} Geçerli bir URL girin (örn: https://example.com)")
         sys.exit(1)
     if not parsed_url.netloc:
-        print("\033[91m[ERROR] Geçerli bir alan adı girin.\033[0m")
+        print(f"\n{Colors.BG_RED}[HATA]{Colors.ENDC} Geçerli bir alan adı girin.")
         sys.exit(1)
     return parsed_url.scheme + "://" + parsed_url.netloc
 
-# Çıktıyı dosyaya kaydetme
+# Sonuçları dosyaya kaydetme
 def save_to_file(admin_panels, url):
     if not admin_panels:
-        print("\033[91m[INFO] Admin paneli bulunamadı.\033[0m\n")
         return
-    file_name = f"admin_panels_{urlparse(url).netloc}.txt"
-    with open(file_name, "w") as file:
+        
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    file_name = f"admin_panels_{urlparse(url).netloc}_{timestamp}.txt"
+    
+    with open(file_name, "w", encoding='utf-8') as file:
+        file.write(f"Tarama Tarihi: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        file.write(f"Hedef URL: {url}\n")
+        file.write("-" * 50 + "\n\n")
+        
         for panel in admin_panels:
-            file.write(panel + "\n")
-    print(f"\033[94m[INFO] Bulunan admin panelleri '{file_name}' dosyasına kaydedildi.\033[0m\n")
-
-# Animasyonlu "Hoşgeldiniz" Mesajı
-def welcome_animation():
-    welcome_text = "Welcome to NexVortex"
-    clear_screen()
-    print("\033[94m")  # Mavi renk
-    for i in range(3):
-        for c in welcome_text:
-            print(f"\033[92m{c}\033[0m", end='', flush=True)
-            time.sleep(0.1)  # Karakterler arasında kısa bir gecikme
-        print()
-        time.sleep(0.3)  # Bir süre bekle
-        clear_screen()
-
-    print("\033[92m[INFO] Giriş Başarılı!\033[0m\n")
-    time.sleep(0.5)
-    clear_screen()
+            file.write(f"URL: {panel['url']}\n")
+            file.write(f"Yanıt Süresi: {panel['response_time']}ms\n")
+            file.write(f"Durum Kodu: {panel['status_code']}\n")
+            file.write(f"Sayfa Başlığı: {panel['title']}\n")
+            file.write("-" * 30 + "\n")
+    
+    print(f"\n{Colors.GREEN}[BAŞARILI]{Colors.ENDC} Sonuçlar '{file_name}' dosyasına kaydedildi.")
 
 # Ekranı temizleme fonksiyonu
 def clear_screen():
     os.system("cls" if os.name == "nt" else "clear")
 
-# Kullanıcıdan hedef URL alma
-async def get_target_url():
-    target_url = input("\033[94mHedef web sitesinin URL'sini girin (örn. https://example.com) veya çıkmak için 'q' tuşlayın: \033[0m").strip()
-    return target_url
-
-# İlerleme çubuğu ile admin panel tarama fonksiyonu
-async def run_with_progress_bar(url, paths):
-    total = len(paths)
-    admin_panels = []
-
-    # Asenkron ilerleme çubuğu kullanımı
-    with tqdm(total=total, desc="Admin Panel Tarama", ncols=100, bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} ({percentage:3.0f}%)") as progress_bar:
-        async with aiohttp.ClientSession() as session:
-            for path in paths:
-                admin_url = await find_admin_panel(session, url, path)
-                if admin_url:
-                    admin_panels.append(admin_url)
-                progress_bar.update(1)  # Her bir URL tarandıkça ilerleme çubuğunu güncelle
-    return admin_panels
-
 # Ana fonksiyon
 async def main():
-    welcome_animation()  # Hacker temalı animasyonlu hoşgeldiniz mesajı
-
-    # Admin panel yollarını dosyadan yükle
-    paths = load_paths_from_file()
-
+    clear_screen()
+    print_banner()
+    
     while True:
-        target_url = await get_target_url()
+        print(f"\n{Colors.BOLD}{Colors.BG_BLUE} ADMIN PANEL TARAYICI {Colors.ENDC}")
+        print(f"\n{Colors.CYAN}[?]{Colors.ENDC} Hedef URL girin (örn: https://example.com)")
+        print(f"{Colors.CYAN}[?]{Colors.ENDC} Çıkmak için 'q' tuşuna basın")
+        print(f"{Colors.CYAN}{'─' * 50}{Colors.ENDC}")
+        
+        target_url = input(f"\n{Colors.GREEN}┌──({Colors.CYAN}NexVortex{Colors.GREEN}){Colors.WHITE}-[{Colors.YELLOW}~/admin-scanner{Colors.WHITE}]\n{Colors.GREEN}└─$ {Colors.ENDC}").strip()
 
         if target_url.lower() == 'q':
-            print("\033[94m[INFO] Çıkılıyor...\033[0m")
-            break  # Programı sonlandır
+            print(f"\n{Colors.BLUE}[BİLGİ]{Colors.ENDC} Program sonlandırılıyor...")
+            print(f"{Colors.CYAN}İyi günler dileriz!{Colors.ENDC}")
+            break
 
-        url = validate_url(target_url)
-
-        print("\033[94m[INFO] Tarama başlatılıyor... Lütfen bekleyin.\033[0m\n")
-        admin_panels = await run_with_progress_bar(url, paths)
-
-        if admin_panels:
-            print("\033[92m[OK] Bulunan admin panelleri:\033[0m")
-            for panel in admin_panels:
-                print(f"\033[92m[OK] {panel}\033[0m")
-        else:
-            print("\033[91m[INFO] Admin paneli bulunamadı.\033[0m\n")
-
-        # Sonuçları dosyaya kaydet
-        save_to_file(admin_panels, url)
+        try:
+            url = validate_url(target_url)
+            admin_panels = await scan_admin_panels(url)
+            save_to_file(admin_panels, url)
+            
+        except Exception as e:
+            print(f"\n{Colors.BG_RED}[HATA]{Colors.ENDC} {str(e)}")
+        
+        input(f"\n{Colors.BLUE}[BİLGİ]{Colors.ENDC} Devam etmek için Enter'a basın...")
+        clear_screen()
+        print_banner()
 
 # Programı başlatma
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print(f"\n\n{Colors.BLUE}[BİLGİ]{Colors.ENDC} Program kullanıcı tarafından sonlandırıldı.")
+        print(f"{Colors.CYAN}İyi günler dileriz!{Colors.ENDC}")
+        sys.exit(0)
