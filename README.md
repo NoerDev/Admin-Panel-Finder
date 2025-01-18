@@ -57,8 +57,6 @@ Follow these simple steps to install and start using **v3**:
 
 **NexVortex v3** not only provides a functional tool but also an **engaging experience** with its visuals. The **hacker-themed animations** and **progress bars** make the scanning process fun and enjoyable! 🤖
 
-![NexVortex Animation](https://i.hizliresim.com/632rzwh.PNG)
-
 ---
 
 Try **NexVortex v3** today and speed up your web security journey! 🚀
