@@ -21,7 +21,7 @@ Follow these simple steps to install and start using **v3**:
 
 1. **Clone the Repository**:
     ```bash
-    git clone https://github.com/username/nexvortex.git
+    git clone https://github.com/NoerDev/Admin-Panel-Finder.git
     ```
 
 2. **Navigate to the Project Directory**:
